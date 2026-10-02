@@ -17,6 +17,7 @@ Include Files
 /* General Includes */
 #include "EmbeddedTypes.h"
 #include <string.h>
+#include <stdio.h>
 
 /* FSL Framework */
 #include "shell.h"
@@ -54,6 +55,9 @@ Include Files
 #include "app_echo_udp.h"
 #endif
 
+#include "timer_task.h"
+
+
 /*==================================================================================================
 Private macros
 ==================================================================================================*/
@@ -79,6 +83,10 @@ Private macros
 #define APP_LED_URI_PATH                        "/led"
 #define APP_TEMP_URI_PATH                       "/temp"
 #define APP_SINK_URI_PATH                       "/sink"
+
+#define APP_TEAM_URI_PATH   "/team2"
+#define APP_COUNTER_TIME_MS 1000
+
 #if LARGE_NETWORK
 #define APP_RESET_TO_FACTORY_URI_PATH           "/reset"
 #endif
@@ -175,10 +183,7 @@ Public functions
 \fn     void APP_Init(void)
 \brief  This function is used to initialize application.
 ***************************************************************************************************/
-void APP_Init
-(
-    void
-)
+void APP_Init (void)
 {
     /* Initialize pointer to application task message queue */
     mpAppThreadMsgQueue = &appThreadMsgQueue;
@@ -205,12 +210,7 @@ void APP_Init
     {
         /* Initialize CoAP demo */
         APP_InitCoapDemo();
-
-#if USE_TEMPERATURE_SENSOR
-        /* Initialize Temperature sensor/ADC module*/
-        APP_InitADC(ADC_0);
-#endif
-
+        MyTimer_Init();
 #if THREAD_USE_THCI && THR_ENABLE_MGMT_DIAGNOSTICS
         (void)MgmtDiagnostic_RegisterAppCb(THCI_MgmtDiagnosticAppCb);
 #endif
