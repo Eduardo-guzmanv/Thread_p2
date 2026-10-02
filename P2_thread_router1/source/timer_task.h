@@ -33,4 +33,7 @@ void MyTimer_Init(void);
 void MyTask_SW3_Pressed(void);
 void MyTask_SW4_Pressed(void);
 
+static volatile uint16_t mTeamCounter = 1;
+
+uint16_t get_timer();
 #endif /* MYNEWTASK_H_ */
