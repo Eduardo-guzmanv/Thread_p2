@@ -43,6 +43,7 @@ Include Files
 #include "app_temp_sensor.h"
 #include "coap.h"
 #include "app_socket_utils.h"
+#include "timer_task.h"
 #if THR_ENABLE_EVENT_MONITORING
 #include "app_event_monitoring.h"
 #endif
@@ -53,6 +54,10 @@ Include Files
 #if UDP_ECHO_PROTOCOL
 #include "app_echo_udp.h"
 #endif
+
+#include "ip_if_management.h"
+#include "event_manager.h"
+#include "network_utils.h"
 
 /*==================================================================================================
 Private macros
@@ -79,6 +84,10 @@ Private macros
 #define APP_LED_URI_PATH                        "/led"
 #define APP_TEMP_URI_PATH                       "/temp"
 #define APP_SINK_URI_PATH                       "/sink"
+
+#define APP_TEAM_URI_PATH         "/team2"
+
+
 #if LARGE_NETWORK
 #define APP_RESET_TO_FACTORY_URI_PATH           "/reset"
 #endif
@@ -130,12 +139,30 @@ static void APP_AutoStart(void *param);
 static void APP_AutoStartCb(void *param);
 #endif
 
+
+static void APP_RequestTeamCounter(uint8_t *param);
+
+static void APP_CoapTeamResponseCb(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+);
+
+static bool_t APP_GetLeaderAddress(void);
+
+void APP_TriggerCounterRequest(void);
 /*==================================================================================================
 Public global variables declarations
 ==================================================================================================*/
 const coapUriPath_t gAPP_LED_URI_PATH  = {SizeOfString(APP_LED_URI_PATH), (uint8_t *)APP_LED_URI_PATH};
 const coapUriPath_t gAPP_TEMP_URI_PATH = {SizeOfString(APP_TEMP_URI_PATH), (uint8_t *)APP_TEMP_URI_PATH};
 const coapUriPath_t gAPP_SINK_URI_PATH = {SizeOfString(APP_SINK_URI_PATH), (uint8_t *)APP_SINK_URI_PATH};
+const coapUriPath_t gAPP_TEAM_URI_PATH =
+{
+    SizeOfString(APP_TEAM_URI_PATH),
+    (uint8_t *)APP_TEAM_URI_PATH
+};
 #if LARGE_NETWORK
 const coapUriPath_t gAPP_RESET_URI_PATH = {SizeOfString(APP_RESET_TO_FACTORY_URI_PATH), (uint8_t *)APP_RESET_TO_FACTORY_URI_PATH};
 #endif
@@ -156,6 +183,13 @@ ipAddr_t gCoapDestAddress;
 
 /* Application timer Id */
 tmrTimerID_t mAppTimerId = gTmrInvalidTimerID_c;
+
+
+/* Leader IPv6 address */
+static ipAddr_t mLeaderAddress;
+
+/* Leader IPv6 address status */
+static bool_t mLeaderAddressValid = FALSE;
 
 #if APP_AUTOSTART
 tmrTimerID_t tmrStartApp = gTmrInvalidTimerID_c;
@@ -195,6 +229,9 @@ void APP_Init
 
     /* Use one instance ID for application */
     mThrInstanceId = gThrDefaultInstanceId_c;
+
+    /* Initialize custom Timer Task */
+    MyTimer_Init();
 
 #if THR_ENABLE_EVENT_MONITORING
     /* Initialize event monitoring */
@@ -317,17 +354,46 @@ void Stack_to_APP_Handler
             break;
 
         case gThrEv_GeneralInd_Connected_c:
+
             App_UpdateStateLeds(gDeviceState_NwkConnected_c);
+
             /* Set application CoAP destination to all nodes on connected network */
-            THR_GetIP6Addr(mThrInstanceId, gAllThreadNodes_c, &gCoapDestAddress, NULL);
-            APP_SetMode(mThrInstanceId, gDeviceMode_Application_c);
-            mFirstPushButtonPressed  = FALSE;
+            THR_GetIP6Addr(
+                mThrInstanceId,
+                gAllThreadNodes_c,
+                &gCoapDestAddress,
+                NULL
+            );
+
+            APP_SetMode(
+                mThrInstanceId,
+                gDeviceMode_Application_c
+            );
+
+            mFirstPushButtonPressed = FALSE;
+
             /* Synchronize server data */
             THR_BrPrefixAttrSync(mThrInstanceId);
+
             /* Enable LED for 80215.4 tx activity */
             gEnable802154TxLed = TRUE;
-            /* Uncomment to register multicast address */
-            //IP_IF_AddMulticastGroup6(gIpIfSlp0_c, &mCastGroup);
+
+            /* Configure Leader address automatically */
+            if(APP_GetLeaderAddress() == TRUE)
+            {
+                mLeaderAddressValid = TRUE;
+
+                /* Start Counter request Timer */
+                MyTaskTimer_Start();
+            }
+            else
+            {
+                mLeaderAddressValid = FALSE;
+
+                shell_write("Could not configure Leader address\r\n");
+                shell_refresh();
+            }
+
             break;
 
         case gThrEv_GeneralInd_RequestRouterId_c:
@@ -345,8 +411,21 @@ void Stack_to_APP_Handler
 
         case gThrEv_GeneralInd_ConnectingFailed_c:
         case gThrEv_GeneralInd_Disconnected_c:
-            APP_SetMode(mThrInstanceId, gDeviceMode_Configuration_c);
-            App_UpdateStateLeds(gDeviceState_NwkFailure_c);
+
+            /* Stop Counter request Timer */
+            MyTaskTimer_Stop();
+
+            mLeaderAddressValid = FALSE;
+
+            APP_SetMode(
+                mThrInstanceId,
+                gDeviceMode_Configuration_c
+            );
+
+            App_UpdateStateLeds(
+                gDeviceState_NwkFailure_c
+            );
+
             break;
 
         case gThrEv_GeneralInd_DeviceIsLeader_c:
@@ -469,13 +548,29 @@ void App_RestoreLeaderLedCb
     void *param
 )
 {
-    (void)NWKU_SendMsg(App_RestoreLeaderLed, NULL, mpAppThreadMsgQueue);
+    (void)NWKU_SendMsg(
+        App_RestoreLeaderLed,
+        NULL,
+        mpAppThreadMsgQueue
+    );
+}
+
+/* Function used by Timer Task to request the Counter */
+void APP_TriggerCounterRequest(void)
+{
+    if(mLeaderAddressValid == TRUE)
+    {
+        (void)NWKU_SendMsg(
+            APP_RequestTeamCounter,
+            NULL,
+            mpAppThreadMsgQueue
+        );
+    }
 }
 
 /*==================================================================================================
 Private functions
-==================================================================================================*/
-/*!*************************************************************************************************
+==================================================================================================*//*!*************************************************************************************************
 \private
 \fn     static void APP_InitCoapDemo(void)
 \brief  Initialize CoAP demo.
@@ -1374,6 +1469,188 @@ static void APP_CoapSinkCb
     }
 }
 
+static bool_t APP_GetLeaderAddress(void)
+{
+    ipAddr_t myMeshLocalAddress;
+    uint8_t *pLeaderBytes;
+    char leaderAddrStr[INET6_ADDRSTRLEN];
+
+    /*
+     * Get this Router's Mesh Local EID.
+     * The first 64 bits contain the Mesh Local Prefix.
+     */
+    (void)THR_GetIP6Addr(
+        mThrInstanceId,
+        gMLEIDAddr_c,
+        &myMeshLocalAddress,
+        NULL
+    );
+
+    /*
+     * Copy the complete address first.
+     * We will preserve bytes 0..7 = Mesh Local Prefix.
+     */
+    FLib_MemCpy(
+        &mLeaderAddress,
+        &myMeshLocalAddress,
+        sizeof(ipAddr_t)
+    );
+
+    /*
+     * Thread Leader ALOC:
+     *
+     * xxxx:xxxx:xxxx:xxxx::ff:fe00:fc00
+     *
+     * IID in bytes:
+     *
+     * 00 00 00 FF FE 00 FC 00
+     */
+    pLeaderBytes = (uint8_t *)&mLeaderAddress;
+
+    pLeaderBytes[8]  = 0x00;
+    pLeaderBytes[9]  = 0x00;
+    pLeaderBytes[10] = 0x00;
+    pLeaderBytes[11] = 0xFF;
+    pLeaderBytes[12] = 0xFE;
+    pLeaderBytes[13] = 0x00;
+    pLeaderBytes[14] = 0xFC;
+    pLeaderBytes[15] = 0x00;
+
+    /*
+     * Print the address so we can verify it.
+     */
+    ntop(
+        AF_INET6,
+        &mLeaderAddress,
+        leaderAddrStr,
+        INET6_ADDRSTRLEN
+    );
+
+    shell_printf(
+        "Leader ALOC configured: %s\r\n",
+        leaderAddrStr
+    );
+
+    shell_refresh();
+
+    return TRUE;
+}
+/*!*************************************************************************************************
+\private
+\fn     static void APP_RequestTeamCounter(uint8_t *param)
+\brief  This function sends a CoAP GET request to the Leader.
+
+\param  [in]    param    Not used
+***************************************************************************************************/
+static void APP_RequestTeamCounter
+(
+    uint8_t *param
+)
+{
+    coapSession_t *pSession = NULL;
+
+    (void)param;
+
+    if(mLeaderAddressValid == FALSE)
+    {
+        return;
+    }
+
+    pSession = COAP_OpenSession(mAppCoapInstId);
+
+    if(pSession != NULL)
+    {
+        FLib_MemCpy(
+            &pSession->remoteAddrStorage.ss_addr,
+            &mLeaderAddress,
+            sizeof(ipAddr_t)
+        );
+
+        pSession->pUriPath =
+            (coapUriPath_t *)&gAPP_TEAM_URI_PATH;
+
+        COAP_SetCallback(
+            pSession,
+            APP_CoapTeamResponseCb
+        );
+
+        (void)COAP_Send(
+            pSession,
+            gCoapMsgTypeConGet_c,
+            NULL,
+            0
+        );
+    }
+}
+
+/*!*************************************************************************************************
+\private
+\fn     static void APP_CoapTeamResponseCb(coapSessionStatus_t sessionStatus,
+                                           uint8_t *pData,
+                                           coapSession_t *pSession,
+                                           uint32_t dataLen)
+\brief  This function is the callback for the Counter CoAP response.
+
+\param  [in]    sessionStatus   Status for CoAP session
+\param  [in]    pData           Pointer to CoAP message payload
+\param  [in]    pSession        Pointer to CoAP session
+\param  [in]    dataLen         Length of CoAP payload
+***************************************************************************************************/
+static void APP_CoapTeamResponseCb
+(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+)
+{
+    char addrStr[INET6_ADDRSTRLEN];
+    char counterStr[8];
+    uint32_t copyLength;
+
+    if((sessionStatus == gCoapSuccess_c) &&
+       (pData != NULL) &&
+       (dataLen > 0))
+    {
+        ntop(
+            AF_INET6,
+            (ipAddr_t *)&pSession->remoteAddrStorage.ss_addr,
+            addrStr,
+            INET6_ADDRSTRLEN
+        );
+
+        copyLength = dataLen;
+
+        if(copyLength >= sizeof(counterStr))
+        {
+            copyLength = sizeof(counterStr) - 1;
+        }
+
+        FLib_MemCpy(
+            counterStr,
+            pData,
+            copyLength
+        );
+
+        counterStr[copyLength] = '\0';
+
+        shell_printf(
+            "Counter = %s from %s type CON\r\n",
+            counterStr,
+            addrStr
+        );
+
+        shell_refresh();
+    }
+    else if(sessionStatus == gCoapFailure_c)
+    {
+        shell_write(
+            "No response received from Leader\r\n"
+        );
+
+        shell_refresh();
+    }
+}
 /*!*************************************************************************************************
 \private
 \fn     static void App_RestoreLeaderLed(uint8_t *param)
