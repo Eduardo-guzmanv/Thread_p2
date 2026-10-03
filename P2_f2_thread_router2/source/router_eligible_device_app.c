@@ -87,7 +87,11 @@ Private macros
 
 #define APP_TEAM_URI_PATH         "/team2"
 
+#define APP_STOP_MY_TMR_URI_PATH   "/stopMyTmr"
 
+#define APP_STOP_TMR_URI_PATH      "/stopTmr"
+#define APP_START_TMR_URI_PATH     "/startTmr"
+#define APP_RESTART_TMR_URI_PATH   "/restartTmr"
 
 #if LARGE_NETWORK
 #define APP_RESET_TO_FACTORY_URI_PATH           "/reset"
@@ -111,37 +115,103 @@ static bool_t mJoiningIsAppInitiated = FALSE;
 /*==================================================================================================
 Private prototypes
 ==================================================================================================*/
+
 static void App_HandleKeyboard(uint8_t *param);
+
 static void App_UpdateStateLeds(appDeviceState_t deviceState);
+
 static void APP_JoinEventsHandler(thrEvCode_t evCode);
+
 static void APP_InitCoapDemo(void);
+
 static void APP_ReportTemp(uint8_t *pParam);
+
 static void APP_SendDataSinkCreate(uint8_t *pParam);
+
 static void APP_SendDataSinkRelease(uint8_t *pParam);
+
+
 #if gKBD_KeysCount_c > 1
+
 static void APP_SendLedRgbOn(uint8_t *pParam);
+
 static void APP_SendLedRgbOff(uint8_t *pParam);
+
 static void APP_SendLedFlash(uint8_t *pParam);
+
 static void APP_SendLedColorWheel(uint8_t *pParam);
+
 #endif
+
+
 static void APP_LocalDataSinkRelease(uint8_t *pParam);
-static void APP_ProcessLedCmd(uint8_t *pCommand, uint8_t dataLen);
-static void APP_CoapGenericCallback(coapSessionStatus_t sessionStatus, uint8_t *pData, coapSession_t *pSession, uint32_t dataLen);
-static void APP_CoapLedCb(coapSessionStatus_t sessionStatus, uint8_t *pData, coapSession_t *pSession, uint32_t dataLen);
-static void APP_CoapTempCb(coapSessionStatus_t sessionStatus, uint8_t *pData, coapSession_t *pSession, uint32_t dataLen);
-static void APP_CoapSinkCb(coapSessionStatus_t sessionStatus, uint8_t *pData, coapSession_t *pSession, uint32_t dataLen);
+
+static void APP_ProcessLedCmd(
+    uint8_t *pCommand,
+    uint8_t dataLen
+);
+
+
+static void APP_CoapGenericCallback(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+);
+
+
+static void APP_CoapLedCb(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+);
+
+
+static void APP_CoapTempCb(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+);
+
+
+static void APP_CoapSinkCb(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+);
+
+
 static void App_RestoreLeaderLed(uint8_t *param);
+
+
 #if LARGE_NETWORK
-static void APP_CoapResetToFactoryDefaultsCb(coapSessionStatus_t sessionStatus, uint8_t *pData, coapSession_t *pSession, uint32_t dataLen);
+
+static void APP_CoapResetToFactoryDefaultsCb(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+);
+
 static void APP_SendResetToFactoryCommand(uint8_t *param);
+
 #endif
+
+
 #if APP_AUTOSTART
+
 static void APP_AutoStart(void *param);
+
 static void APP_AutoStartCb(void *param);
+
 #endif
 
 
 static void APP_RequestTeamCounter(uint8_t *param);
+
 
 static void APP_CoapTeamResponseCb(
     coapSessionStatus_t sessionStatus,
@@ -150,19 +220,98 @@ static void APP_CoapTeamResponseCb(
     uint32_t dataLen
 );
 
+
 static bool_t APP_GetLeaderAddress(void);
 
+
+/* Called from timer_task.c */
 void APP_TriggerCounterRequest(void);
-/*==================================================================================================
-Public global variables declarations
-==================================================================================================*/
+
+
+static void APP_CoapStopMyTmrCb(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+);
+
+static void APP_CoapStopTmrCb(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+);
+
+static void APP_CoapStartTmrCb(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+);
+
+static void APP_CoapRestartTmrCb(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+);
+
+static void APP_SendStopTmr(uint8_t *param);
+
+static void APP_SendStartTmr(uint8_t *param);
+
+static void APP_SendRestartTmr(uint8_t *param);
+
+static void APP_SendLeaderControl(
+    coapUriPath_t *pUri
+);
+
+static void APP_CoapControlResponseCb(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+);
+
+
 const coapUriPath_t gAPP_LED_URI_PATH  = {SizeOfString(APP_LED_URI_PATH), (uint8_t *)APP_LED_URI_PATH};
-const coapUriPath_t gAPP_TEMP_URI_PATH = {SizeOfString(APP_TEMP_URI_PATH), (uint8_t *)APP_TEMP_URI_PATH};
-const coapUriPath_t gAPP_SINK_URI_PATH = {SizeOfString(APP_SINK_URI_PATH), (uint8_t *)APP_SINK_URI_PATH};
+const coapUriPath_t gAPP_TEMP_URI_PATH =
+{
+    SizeOfString(APP_TEMP_URI_PATH),
+    (uint8_t *)APP_TEMP_URI_PATH
+};
+const coapUriPath_t gAPP_SINK_URI_PATH =
+{
+    SizeOfString(APP_SINK_URI_PATH),
+    (uint8_t *)APP_SINK_URI_PATH
+};
 const coapUriPath_t gAPP_TEAM_URI_PATH =
 {
     SizeOfString(APP_TEAM_URI_PATH),
     (uint8_t *)APP_TEAM_URI_PATH
+};
+const coapUriPath_t gAPP_STOP_MY_TMR_URI_PATH =
+{
+    SizeOfString(APP_STOP_MY_TMR_URI_PATH),
+    (uint8_t *)APP_STOP_MY_TMR_URI_PATH
+};
+
+const coapUriPath_t gAPP_STOP_TMR_URI_PATH =
+{
+    SizeOfString(APP_STOP_TMR_URI_PATH),
+    (uint8_t *)APP_STOP_TMR_URI_PATH
+};
+
+const coapUriPath_t gAPP_START_TMR_URI_PATH =
+{
+    SizeOfString(APP_START_TMR_URI_PATH),
+    (uint8_t *)APP_START_TMR_URI_PATH
+};
+
+const coapUriPath_t gAPP_RESTART_TMR_URI_PATH =
+{
+    SizeOfString(APP_RESTART_TMR_URI_PATH),
+    (uint8_t *)APP_RESTART_TMR_URI_PATH
 };
 #if LARGE_NETWORK
 const coapUriPath_t gAPP_RESET_URI_PATH = {SizeOfString(APP_RESET_TO_FACTORY_URI_PATH), (uint8_t *)APP_RESET_TO_FACTORY_URI_PATH};
@@ -203,9 +352,295 @@ taskMsgQueue_t *mpAppThreadMsgQueue = NULL;
 
 extern bool_t gEnable802154TxLed;
 
-/*==================================================================================================
-Public functions
-==================================================================================================*/
+
+static void APP_SendStopTmr(uint8_t *param)
+{
+    (void)param;
+
+    shell_write("Sending /stopTmr to Leader\r\n");
+    shell_refresh();
+
+    APP_SendLeaderControl(
+        (coapUriPath_t *)&gAPP_STOP_TMR_URI_PATH
+    );
+}
+
+
+static void APP_SendStartTmr(uint8_t *param)
+{
+    (void)param;
+
+    shell_write("Sending /startTmr to Leader\r\n");
+    shell_refresh();
+
+    APP_SendLeaderControl(
+        (coapUriPath_t *)&gAPP_START_TMR_URI_PATH
+    );
+}
+
+
+static void APP_SendRestartTmr(uint8_t *param)
+{
+    (void)param;
+
+    shell_write("Sending /restartTmr to Leader\r\n");
+    shell_refresh();
+
+    APP_SendLeaderControl(
+        (coapUriPath_t *)&gAPP_RESTART_TMR_URI_PATH
+    );
+}
+
+
+static void APP_SendLeaderControl
+(
+    coapUriPath_t *pUri
+)
+{
+    coapSession_t *pSession = NULL;
+
+    if(mLeaderAddressValid == FALSE)
+    {
+        shell_write("Leader address is not valid\r\n");
+        shell_refresh();
+        return;
+    }
+
+    pSession = COAP_OpenSession(mAppCoapInstId);
+
+    if(pSession != NULL)
+    {
+        FLib_MemCpy(
+            &pSession->remoteAddrStorage.ss_addr,
+            &mLeaderAddress,
+            sizeof(ipAddr_t)
+        );
+
+        pSession->pUriPath = pUri;
+
+        COAP_SetCallback(
+            pSession,
+            APP_CoapControlResponseCb
+        );
+
+        (void)COAP_Send(
+            pSession,
+            gCoapMsgTypeConGet_c,
+            NULL,
+            0
+        );
+    }
+}
+
+static void APP_CoapControlResponseCb
+(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+)
+{
+    (void)pData;
+    (void)pSession;
+    (void)dataLen;
+
+    if(sessionStatus == gCoapSuccess_c)
+    {
+        shell_write("Leader command ACK received\r\n");
+    }
+    else if(sessionStatus == gCoapFailure_c)
+    {
+        shell_write("Leader command failed\r\n");
+    }
+
+    shell_refresh();
+}
+
+
+static void APP_CoapStopMyTmrCb
+(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+)
+{
+    char addrStr[INET6_ADDRSTRLEN];
+
+    (void)pData;
+    (void)dataLen;
+
+    if(sessionStatus == gCoapFailure_c)
+    {
+        return;
+    }
+
+    ntop(
+        AF_INET6,
+        (ipAddr_t *)&pSession->remoteAddrStorage.ss_addr,
+        addrStr,
+        INET6_ADDRSTRLEN
+    );
+
+    MyTaskTimer_Stop();
+
+    shell_printf(
+        "/stopMyTmr received from %s\r\n",
+        addrStr
+    );
+
+    shell_write("Router 2 request timer stopped\r\n");
+    shell_refresh();
+
+    if(pSession->msgType == gCoapConfirmable_c)
+    {
+        (void)COAP_Send(
+            pSession,
+            gCoapMsgTypeAckSuccessChanged_c,
+            NULL,
+            0
+        );
+    }
+}
+
+
+static void APP_CoapStopTmrCb
+(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+)
+{
+    char addrStr[INET6_ADDRSTRLEN];
+
+    (void)pData;
+    (void)dataLen;
+
+    if(sessionStatus == gCoapFailure_c)
+    {
+        return;
+    }
+
+    ntop(
+        AF_INET6,
+        (ipAddr_t *)&pSession->remoteAddrStorage.ss_addr,
+        addrStr,
+        INET6_ADDRSTRLEN
+    );
+
+    shell_printf(
+        "/stopTmr received from %s\r\n",
+        addrStr
+    );
+
+    shell_refresh();
+
+    APP_SendStopTmr(NULL);
+
+    if(pSession->msgType == gCoapConfirmable_c)
+    {
+        (void)COAP_Send(
+            pSession,
+            gCoapMsgTypeAckSuccessChanged_c,
+            NULL,
+            0
+        );
+    }
+}
+
+
+static void APP_CoapStartTmrCb
+(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+)
+{
+    char addrStr[INET6_ADDRSTRLEN];
+
+    (void)pData;
+    (void)dataLen;
+
+    if(sessionStatus == gCoapFailure_c)
+    {
+        return;
+    }
+
+    ntop(
+        AF_INET6,
+        (ipAddr_t *)&pSession->remoteAddrStorage.ss_addr,
+        addrStr,
+        INET6_ADDRSTRLEN
+    );
+
+    shell_printf(
+        "/startTmr received from %s\r\n",
+        addrStr
+    );
+
+    shell_refresh();
+
+    APP_SendStartTmr(NULL);
+
+    if(pSession->msgType == gCoapConfirmable_c)
+    {
+        (void)COAP_Send(
+            pSession,
+            gCoapMsgTypeAckSuccessChanged_c,
+            NULL,
+            0
+        );
+    }
+}
+
+
+static void APP_CoapRestartTmrCb
+(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+)
+{
+    char addrStr[INET6_ADDRSTRLEN];
+
+    (void)pData;
+    (void)dataLen;
+
+    if(sessionStatus == gCoapFailure_c)
+    {
+        return;
+    }
+
+    ntop(
+        AF_INET6,
+        (ipAddr_t *)&pSession->remoteAddrStorage.ss_addr,
+        addrStr,
+        INET6_ADDRSTRLEN
+    );
+
+    shell_printf(
+        "/restartTmr received from %s\r\n",
+        addrStr
+    );
+
+    shell_refresh();
+
+    APP_SendRestartTmr(NULL);
+
+    if(pSession->msgType == gCoapConfirmable_c)
+    {
+        (void)COAP_Send(
+            pSession,
+            gCoapMsgTypeAckSuccessChanged_c,
+            NULL,
+            0
+        );
+    }
+}
+
 /*!*************************************************************************************************
 \fn     void APP_Init(void)
 \brief  This function is used to initialize application.
@@ -581,20 +1016,69 @@ static void APP_InitCoapDemo
     void
 )
 {
-    coapRegCbParams_t cbParams[] =  {{APP_CoapLedCb,  (coapUriPath_t *)&gAPP_LED_URI_PATH},
-                                     {APP_CoapTempCb, (coapUriPath_t *)&gAPP_TEMP_URI_PATH},
+    coapRegCbParams_t cbParams[] =
+    {
+        {
+            APP_CoapLedCb,
+            (coapUriPath_t *)&gAPP_LED_URI_PATH
+        },
+
+        {
+            APP_CoapTempCb,
+            (coapUriPath_t *)&gAPP_TEMP_URI_PATH
+        },
+
+        {
+            APP_CoapStopMyTmrCb,
+            (coapUriPath_t *)&gAPP_STOP_MY_TMR_URI_PATH
+        },
+
+        {
+            APP_CoapStopTmrCb,
+            (coapUriPath_t *)&gAPP_STOP_TMR_URI_PATH
+        },
+
+        {
+            APP_CoapStartTmrCb,
+            (coapUriPath_t *)&gAPP_START_TMR_URI_PATH
+        },
+
+        {
+            APP_CoapRestartTmrCb,
+            (coapUriPath_t *)&gAPP_RESTART_TMR_URI_PATH
+        },
+
 #if LARGE_NETWORK
-                                     {APP_CoapResetToFactoryDefaultsCb, (coapUriPath_t *)&gAPP_RESET_URI_PATH},
+        {
+            APP_CoapResetToFactoryDefaultsCb,
+            (coapUriPath_t *)&gAPP_RESET_URI_PATH
+        },
 #endif
-                                     {APP_CoapSinkCb, (coapUriPath_t *)&gAPP_SINK_URI_PATH}};
-    /* Register Services in COAP */
+
+        {
+            APP_CoapSinkCb,
+            (coapUriPath_t *)&gAPP_SINK_URI_PATH
+        }
+    };
+
     sockaddrStorage_t coapParams = {0};
 
-    NWKU_SetSockAddrInfo(&coapParams, NULL, AF_INET6, COAP_DEFAULT_PORT, 0, gIpIfSlp0_c);
-    mAppCoapInstId = COAP_CreateInstance(NULL, &coapParams, (coapRegCbParams_t *)cbParams,
-                                         NumberOfElements(cbParams));
-}
+    NWKU_SetSockAddrInfo(
+        &coapParams,
+        NULL,
+        AF_INET6,
+        COAP_DEFAULT_PORT,
+        0,
+        gIpIfSlp0_c
+    );
 
+    mAppCoapInstId = COAP_CreateInstance(
+        NULL,
+        &coapParams,
+        (coapRegCbParams_t *)cbParams,
+        NumberOfElements(cbParams)
+    );
+}
 /*!*************************************************************************************************
 \private
 \fn     static void APP_ThrNwkJoin(uint8_t *param)
@@ -1497,15 +1981,6 @@ static bool_t APP_GetLeaderAddress(void)
         sizeof(ipAddr_t)
     );
 
-    /*
-     * Thread Leader ALOC:
-     *
-     * xxxx:xxxx:xxxx:xxxx::ff:fe00:fc00
-     *
-     * IID in bytes:
-     *
-     * 00 00 00 FF FE 00 FC 00
-     */
     pLeaderBytes = (uint8_t *)&mLeaderAddress;
 
     pLeaderBytes[8]  = 0x00;
@@ -1516,10 +1991,6 @@ static bool_t APP_GetLeaderAddress(void)
     pLeaderBytes[13] = 0x00;
     pLeaderBytes[14] = 0xFC;
     pLeaderBytes[15] = 0x00;
-
-    /*
-     * Print the address so we can verify it.
-     */
     ntop(
         AF_INET6,
         &mLeaderAddress,
@@ -1571,7 +2042,6 @@ static void APP_RequestTeamCounter(uint8_t *param)
 
         if(sendCon == TRUE)
         {
-            /* CON: esperamos respuesta */
             COAP_SetCallback(
                 pSession,
                 APP_CoapTeamResponseCb
@@ -1591,7 +2061,6 @@ static void APP_RequestTeamCounter(uint8_t *param)
         }
         else
         {
-            /* NON: no esperamos ACK */
             shell_write("NON\r\n");
             shell_refresh();
 
@@ -1606,19 +2075,7 @@ static void APP_RequestTeamCounter(uint8_t *param)
         }
     }
 }
-/*!*************************************************************************************************
-\private
-\fn     static void APP_CoapTeamResponseCb(coapSessionStatus_t sessionStatus,
-                                           uint8_t *pData,
-                                           coapSession_t *pSession,
-                                           uint32_t dataLen)
-\brief  This function is the callback for the Counter CoAP response.
 
-\param  [in]    sessionStatus   Status for CoAP session
-\param  [in]    pData           Pointer to CoAP message payload
-\param  [in]    pSession        Pointer to CoAP session
-\param  [in]    dataLen         Length of CoAP payload
-***************************************************************************************************/
 static void APP_CoapTeamResponseCb
 (
     coapSessionStatus_t sessionStatus,
@@ -1777,7 +2234,3 @@ static void APP_AutoStartCb
     NWKU_SendMsg(APP_AutoStart, NULL, mpAppThreadMsgQueue);
 }
 #endif
-
-/*==================================================================================================
-Private debug functions
-==================================================================================================*/
