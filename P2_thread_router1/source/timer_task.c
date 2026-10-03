@@ -41,7 +41,6 @@ t_LED_color color;
 void My_Task(osaTaskParam_t argument);
 static void myTaskTimerCallback(void *param);
 
-
 /* OSA Task Definition*/
 OSA_TASK_DEFINE(My_Task, gMyTaskPriority_c, 1, gMyTaskStackSize_c, FALSE );
 
@@ -72,83 +71,33 @@ void My_Task(osaTaskParam_t argument)
          * ===================================================== */
         if(customEvent & gMyNewTaskEvent1_c)
         {
+            mTeamCounter = 1;
             color = GREEN;
-
             TurnOffLeds();
             LED_TurnOnLed(LED_GREEN);
 
-            TMR_StartIntervalTimer(
-                myTimerID,
-                4000,
-                myTaskTimerCallback,
-                NULL
-            );
+            if(myTimerID != gTmrInvalidTimerID_c)
+            {
+                TMR_StartIntervalTimer(
+                    myTimerID,
+                    1000,
+                    myTaskTimerCallback,
+                    NULL
+                );
+            }
         }
 
-
-        /* =====================================================
-         * EVENT 2 - TIMER EXPIRED
-         * ===================================================== */
         if(customEvent & gMyNewTaskEvent2_c)
         {
-            /* Increment counter 0 -> 1 -> 2 -> 3 -> 0 */
-            if(color != MAGENTA)
-            {
-                color += 1;
-            }
-            else
-            {
-                color = GREEN;
-            }
-
-
-
-            switch(color)
-            {
-                case GREEN:
-
-                    TurnOffLeds();
-                    LED_TurnOnLed(LED_GREEN);
-
-                    break;
-
-
-                case RED:
-
-                	TurnOffLeds();
-                    LED_TurnOnLed(LED_RED);
-
-                    break;
-
-
-                case BLUE:
-
-                	TurnOffLeds();
-                    LED_TurnOnLed(LED_BLUE);
-
-                    break;
-
-
-                case MAGENTA:
-
-                	TurnOffLeds();
-                    LED_TurnOnLed(LED_RED);
-                    LED_TurnOnLed(LED_BLUE);
-
-                    break;
-
-
-                default:
-
-                    break;
-            }
+        	if(mTeamCounter < 150){
+				mTeamCounter++;
+			}
+        	else{
+				mTeamCounter = 1;
+			}
 
         }
 
-
-        /* =====================================================
-         * EVENT 3 - STOP TIMER
-         * ===================================================== */
         if(customEvent & gMyNewTaskEvent3_c)
         {
             TurnOffLeds();
@@ -174,7 +123,7 @@ void My_Task(osaTaskParam_t argument)
 
             TMR_StartIntervalTimer(
                 myTimerID,
-                4000,
+                1000,
                 myTaskTimerCallback,
                 NULL
             );
@@ -197,7 +146,7 @@ void My_Task(osaTaskParam_t argument)
 
             TMR_StartIntervalTimer(
                 myTimerID,
-                4000,
+                1000,
                 myTaskTimerCallback,
                 NULL
             );
@@ -241,3 +190,6 @@ void MyTaskTimer_Start(void)
     OSA_EventSet(mMyEvents, gMyNewTaskEvent1_c);
 }
 
+uint16_t get_timer(){
+	return mTeamCounter;
+}
