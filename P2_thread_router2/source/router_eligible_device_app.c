@@ -88,6 +88,7 @@ Private macros
 #define APP_TEAM_URI_PATH         "/team2"
 
 
+
 #if LARGE_NETWORK
 #define APP_RESET_TO_FACTORY_URI_PATH           "/reset"
 #endif
@@ -1542,12 +1543,11 @@ static bool_t APP_GetLeaderAddress(void)
 
 \param  [in]    param    Not used
 ***************************************************************************************************/
-static void APP_RequestTeamCounter
-(
-    uint8_t *param
-)
+static void APP_RequestTeamCounter(uint8_t *param)
 {
     coapSession_t *pSession = NULL;
+
+    static bool_t sendCon = TRUE;
 
     (void)param;
 
@@ -1569,20 +1569,43 @@ static void APP_RequestTeamCounter
         pSession->pUriPath =
             (coapUriPath_t *)&gAPP_TEAM_URI_PATH;
 
-        COAP_SetCallback(
-            pSession,
-            APP_CoapTeamResponseCb
-        );
+        if(sendCon == TRUE)
+        {
+            /* CON: esperamos respuesta */
+            COAP_SetCallback(
+                pSession,
+                APP_CoapTeamResponseCb
+            );
 
-        (void)COAP_Send(
-            pSession,
-            gCoapMsgTypeConGet_c,
-            NULL,
-            0
-        );
+            shell_write("CON\r\n");
+            shell_refresh();
+
+            (void)COAP_Send(
+                pSession,
+                gCoapMsgTypeConGet_c,
+                NULL,
+                0
+            );
+
+            sendCon = FALSE;
+        }
+        else
+        {
+            /* NON: no esperamos ACK */
+            shell_write("NON\r\n");
+            shell_refresh();
+
+            (void)COAP_Send(
+                pSession,
+                gCoapMsgTypeNonGet_c,
+                NULL,
+                0
+            );
+
+            sendCon = TRUE;
+        }
     }
 }
-
 /*!*************************************************************************************************
 \private
 \fn     static void APP_CoapTeamResponseCb(coapSessionStatus_t sessionStatus,
