@@ -17,6 +17,10 @@
 #include "EmbeddedTypes.h"
 #include "fsl_os_abstraction.h"
 
+#include "fsl_i2c.h"
+#include "board.h"
+#include "pin_mux.h"
+
 /* Define the available Task's Events */
 #define gMyNewTaskEvent1_c (1 << 0)
 #define gMyNewTaskEvent2_c (1 << 1)

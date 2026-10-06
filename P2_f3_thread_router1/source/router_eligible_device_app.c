@@ -65,6 +65,17 @@ Private macros
     #define APP_MSG_QUEUE_SIZE                  20
 #endif
 
+#define ACCEL_I2C_BASE          I2C1
+#define ACCEL_I2C_INSTANCE      1U
+#define ACCEL_I2C_ADDRESS       0x1FU
+
+#define ACCEL_REG_OUT_X_MSB     0x01U
+#define ACCEL_REG_WHO_AM_I      0x0DU
+#define ACCEL_REG_XYZ_DATA_CFG  0x0EU
+#define ACCEL_REG_CTRL_REG1     0x2AU
+
+#define ACCEL_WHO_AM_I_VALUE    0xC7U
+
 #if (THREAD_USE_SHELL == FALSE)
     #define shell_write(a)
     #define shell_refresh()
@@ -86,6 +97,8 @@ Private macros
 
 #define APP_TEAM_URI_PATH   "/team2"
 
+#define APP_ACCEL_URI_PATH "/accel"
+
 #if LARGE_NETWORK
 #define APP_RESET_TO_FACTORY_URI_PATH           "/reset"
 #endif
@@ -104,6 +117,16 @@ static instanceId_t mThrInstanceId = gInvalidInstanceId_c;    /*!< Thread Instan
 static bool_t mFirstPushButtonPressed = FALSE;
 
 static bool_t mJoiningIsAppInitiated = FALSE;
+
+static bool_t mAccelReady = FALSE;
+
+static const uint8_t mAccelAddresses[] =
+{
+    0x1C,
+    0x1D,
+    0x1E,
+    0x1F
+};
 
 /*==================================================================================================
 Private prototypes
@@ -137,12 +160,46 @@ static void APP_AutoStart(void *param);
 static void APP_AutoStartCb(void *param);
 #endif
 
+static bool_t APP_InitAccel(void);
 
+static bool_t APP_AccelWriteReg(
+    uint8_t reg,
+    uint8_t value
+);
+
+static bool_t APP_AccelReadRegs(
+    uint8_t reg,
+    uint8_t *pData,
+    uint32_t dataLen
+);
+
+static bool_t APP_ReadAccelRaw(
+    int16_t *x,
+    int16_t *y,
+    int16_t *z
+);
+
+static void APP_CoapAccelCb(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+);
 
 static void APP_CoapTeamCb(coapSessionStatus_t sessionStatus,
                            uint8_t *pData,
                            coapSession_t *pSession,
                            uint32_t dataLen);
+
+static bool_t APP_InitAccel(void);
+
+
+static void APP_CoapAccelCb(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+);
 
 /*==================================================================================================
 Public global variables declarations
@@ -155,6 +212,12 @@ const coapUriPath_t gAPP_TEAM_URI_PATH =
 {
     SizeOfString(APP_TEAM_URI_PATH),
     (uint8_t *)APP_TEAM_URI_PATH
+};
+
+const coapUriPath_t gAPP_ACCEL_URI_PATH =
+{
+    SizeOfString(APP_ACCEL_URI_PATH),
+    (uint8_t *)APP_ACCEL_URI_PATH
 };
 
 #if LARGE_NETWORK
@@ -213,6 +276,8 @@ void APP_Init (void)
 
     /* Use one instance ID for application */
     mThrInstanceId = gThrDefaultInstanceId_c;
+
+    mAccelReady = APP_InitAccel();
 
 #if THR_ENABLE_EVENT_MONITORING
     /* Initialize event monitoring */
@@ -499,20 +564,38 @@ static void APP_InitCoapDemo
     void
 )
 {
-    coapRegCbParams_t cbParams[] =  {{APP_CoapLedCb,  (coapUriPath_t *)&gAPP_LED_URI_PATH},
-                                     {APP_CoapTempCb, (coapUriPath_t *)&gAPP_TEMP_URI_PATH},
+    coapRegCbParams_t cbParams[] =
+    {
+        {APP_CoapLedCb,  (coapUriPath_t *)&gAPP_LED_URI_PATH},
+        {APP_CoapTempCb, (coapUriPath_t *)&gAPP_TEMP_URI_PATH},
+        {APP_CoapTeamCb, (coapUriPath_t *)&gAPP_TEAM_URI_PATH},
 
-									 {APP_CoapTeamCb, (coapUriPath_t *)&gAPP_TEAM_URI_PATH},
+        {APP_CoapAccelCb, (coapUriPath_t *)&gAPP_ACCEL_URI_PATH},
+
 #if LARGE_NETWORK
-                                     {APP_CoapResetToFactoryDefaultsCb, (coapUriPath_t *)&gAPP_RESET_URI_PATH},
+        {APP_CoapResetToFactoryDefaultsCb, (coapUriPath_t *)&gAPP_RESET_URI_PATH},
 #endif
-                                     {APP_CoapSinkCb, (coapUriPath_t *)&gAPP_SINK_URI_PATH}};
-    /* Register Services in COAP */
+
+        {APP_CoapSinkCb, (coapUriPath_t *)&gAPP_SINK_URI_PATH}
+    };
+
     sockaddrStorage_t coapParams = {0};
 
-    NWKU_SetSockAddrInfo(&coapParams, NULL, AF_INET6, COAP_DEFAULT_PORT, 0, gIpIfSlp0_c);
-    mAppCoapInstId = COAP_CreateInstance(NULL, &coapParams, (coapRegCbParams_t *)cbParams,
-                                         NumberOfElements(cbParams));
+    NWKU_SetSockAddrInfo(
+        &coapParams,
+        NULL,
+        AF_INET6,
+        COAP_DEFAULT_PORT,
+        0,
+        gIpIfSlp0_c
+    );
+
+    mAppCoapInstId = COAP_CreateInstance(
+        NULL,
+        &coapParams,
+        (coapRegCbParams_t *)cbParams,
+        NumberOfElements(cbParams)
+    );
 }
 
 /*!*************************************************************************************************
@@ -1541,6 +1624,281 @@ static void APP_CoapTeamCb
         }
 
     }
+}
+
+static bool_t APP_InitAccel(void)
+{
+    i2c_master_config_t config;
+    uint8_t whoAmI = 0;
+
+    BOARD_InitI2C();
+
+    I2C_MasterGetDefaultConfig(&config);
+    config.baudRate_Bps = 100000U;
+
+    I2C_MasterInit(
+        ACCEL_I2C_BASE,
+        &config,
+        BOARD_GetI2cClock(ACCEL_I2C_INSTANCE)
+    );
+
+    if(APP_AccelReadRegs(
+           ACCEL_REG_WHO_AM_I,
+           &whoAmI,
+           1U
+       ) == FALSE)
+    {
+        shell_write("Accelerometer not detected\r\n");
+        shell_refresh();
+        return FALSE;
+    }
+
+    if(whoAmI != ACCEL_WHO_AM_I_VALUE)
+    {
+        shell_printf(
+            "Invalid accelerometer ID: 0x%02X\r\n",
+            whoAmI
+        );
+
+        shell_refresh();
+        return FALSE;
+    }
+
+    if(APP_AccelWriteReg(
+           ACCEL_REG_CTRL_REG1,
+           0x00U
+       ) == FALSE)
+    {
+        return FALSE;
+    }
+
+    if(APP_AccelWriteReg(
+           ACCEL_REG_XYZ_DATA_CFG,
+           0x00U
+       ) == FALSE)
+    {
+        return FALSE;
+    }
+
+    if(APP_AccelWriteReg(
+           ACCEL_REG_CTRL_REG1,
+           0x01U
+       ) == FALSE)
+    {
+        return FALSE;
+    }
+
+    shell_write("Accelerometer initialized\r\n");
+    shell_refresh();
+
+    return TRUE;
+}
+
+static void APP_CoapAccelCb
+(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+)
+{
+    char addrStr[INET6_ADDRSTRLEN];
+    char accelStr[40];
+
+    int16_t x;
+    int16_t y;
+    int16_t z;
+
+    coapMessageTypes_t requestType;
+
+    (void)pData;
+    (void)dataLen;
+
+    if(sessionStatus == gCoapFailure_c)
+    {
+        return;
+    }
+
+    if(pSession->code != gCoapGET_c)
+    {
+        return;
+    }
+
+    requestType = pSession->msgType;
+
+    ntop(
+        AF_INET6,
+        (ipAddr_t *)&pSession->remoteAddrStorage.ss_addr,
+        addrStr,
+        INET6_ADDRSTRLEN
+    );
+
+    if(requestType == gCoapConfirmable_c)
+    {
+        shell_printf(
+            "CON /accel received from %s\r\n",
+            addrStr
+        );
+    }
+    else if(requestType == gCoapNonConfirmable_c)
+    {
+        shell_printf(
+            "NON /accel received from %s\r\n",
+            addrStr
+        );
+    }
+    else
+    {
+        return;
+    }
+
+    if(APP_ReadAccelRaw(&x, &y, &z) == FALSE)
+    {
+        shell_write("Accelerometer read failed\r\n");
+        shell_refresh();
+        return;
+    }
+
+    sprintf(
+        accelStr,
+        "X=%d Y=%d Z=%d",
+        (int)x,
+        (int)y,
+        (int)z
+    );
+
+    shell_printf(
+        "Accel raw: %s\r\n",
+        accelStr
+    );
+
+    shell_refresh();
+
+    if(requestType == gCoapConfirmable_c)
+    {
+        (void)COAP_Send(
+            pSession,
+            gCoapMsgTypeAckSuccessContent_c,
+            (uint8_t *)accelStr,
+            strlen(accelStr)
+        );
+    }
+    else
+    {
+        pSession->msgType = gCoapNonConfirmable_c;
+        pSession->code = gContent_c;
+
+        (void)COAP_Send(
+            pSession,
+            gCoapMsgTypeUseSessionValues_c,
+            (uint8_t *)accelStr,
+            strlen(accelStr)
+        );
+    }
+}
+
+static bool_t APP_AccelWriteReg
+(
+    uint8_t reg,
+    uint8_t value
+)
+{
+    i2c_master_transfer_t transfer = {0};
+
+    transfer.slaveAddress = ACCEL_I2C_ADDRESS;
+    transfer.direction = kI2C_Write;
+    transfer.subaddress = reg;
+    transfer.subaddressSize = 1U;
+    transfer.data = &value;
+    transfer.dataSize = 1U;
+    transfer.flags = kI2C_TransferDefaultFlag;
+
+    if(I2C_MasterTransferBlocking(
+           ACCEL_I2C_BASE,
+           &transfer
+       ) != kStatus_Success)
+    {
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+static bool_t APP_AccelReadRegs
+(
+    uint8_t reg,
+    uint8_t *pData,
+    uint32_t dataLen
+)
+{
+    i2c_master_transfer_t transfer = {0};
+
+    transfer.slaveAddress = ACCEL_I2C_ADDRESS;
+    transfer.direction = kI2C_Read;
+    transfer.subaddress = reg;
+    transfer.subaddressSize = 1U;
+    transfer.data = pData;
+    transfer.dataSize = dataLen;
+    transfer.flags = kI2C_TransferDefaultFlag;
+
+    if(I2C_MasterTransferBlocking(
+           ACCEL_I2C_BASE,
+           &transfer
+       ) != kStatus_Success)
+    {
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+static bool_t APP_ReadAccelRaw
+(
+    int16_t *x,
+    int16_t *y,
+    int16_t *z
+)
+{
+    uint8_t data[6];
+
+    int16_t rawX;
+    int16_t rawY;
+    int16_t rawZ;
+
+    if(mAccelReady == FALSE)
+    {
+        return FALSE;
+    }
+
+    if(APP_AccelReadRegs(
+           ACCEL_REG_OUT_X_MSB,
+           data,
+           sizeof(data)
+       ) == FALSE)
+    {
+        return FALSE;
+    }
+
+    rawX = (int16_t)(
+        ((uint16_t)data[0] << 8) |
+        data[1]
+    );
+
+    rawY = (int16_t)(
+        ((uint16_t)data[2] << 8) |
+        data[3]
+    );
+
+    rawZ = (int16_t)(
+        ((uint16_t)data[4] << 8) |
+        data[5]
+    );
+
+    *x = (int16_t)(rawX >> 2);
+    *y = (int16_t)(rawY >> 2);
+    *z = (int16_t)(rawZ >> 2);
+
+    return TRUE;
 }
 
 /*==================================================================================================
