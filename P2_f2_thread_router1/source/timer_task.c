@@ -23,6 +23,7 @@ tmrTimerID_t myTimerID = gTmrInvalidTimerID_c;
 /* Handler ID for task */
 osaTaskId_t gMyTaskHandler_ID;
 
+static volatile uint16_t mTeamCounter = 1;
 
 /*
         #define gRedLedIdx_c                    0
@@ -105,62 +106,34 @@ void My_Task(osaTaskParam_t argument)
             TMR_StopTimer(myTimerID);
         }
 
-
-        /* =====================================================
-         * SW3 PRESSED
-         * Counter = 0
-         * ===================================================== */
-        if(customEvent & gMyNewTaskEventSW3_c)
+        if(customEvent & gMyNewTaskEvent4_c)
         {
-            color = GREEN;
+            mTeamCounter = 0;
 
-            TurnOffLeds();
-            LED_TurnOnLed(LED_GREEN);
-
-
-            /* Restart the 4 second timer */
-            TMR_StopTimer(myTimerID);
-
-            TMR_StartIntervalTimer(
-                myTimerID,
-                1000,
-                myTaskTimerCallback,
-                NULL
-            );
+            if(myTimerID != gTmrInvalidTimerID_c)
+            {
+                TMR_StartIntervalTimer(
+                    myTimerID,
+                    1000,
+                    myTaskTimerCallback,
+                    NULL
+                );
+            }
         }
 
-
-        /* =====================================================
-         * SW4 PRESSED
-         * Counter = 2
-         * ===================================================== */
-        if(customEvent & gMyNewTaskEventSW4_c)
+        if(customEvent & gMyNewTaskEvent5_c)
         {
-            color = BLUE;
-
-            TurnOffLeds();
-            LED_TurnOnLed(LED_BLUE);
-
-            /* Restart the 4 second timer */
-            TMR_StopTimer(myTimerID);
-
-            TMR_StartIntervalTimer(
-                myTimerID,
-                1000,
-                myTaskTimerCallback,
-                NULL
-            );
+            if(myTimerID != gTmrInvalidTimerID_c)
+            {
+                TMR_StartIntervalTimer(
+                    myTimerID,
+                    1000,
+                    myTaskTimerCallback,
+                    NULL
+                );
+            }
         }
     }
-}
-void MyTask_SW3_Pressed(void)
-{
-    OSA_EventSet(mMyEvents, gMyNewTaskEventSW3_c);
-}
-
-void MyTask_SW4_Pressed(void)
-{
-    OSA_EventSet(mMyEvents, gMyNewTaskEventSW4_c);
 }
 
 /* Function to init the task */
@@ -190,6 +163,16 @@ void MyTaskTimer_Start(void)
     OSA_EventSet(mMyEvents, gMyNewTaskEvent1_c);
 }
 
-uint16_t get_timer(){
-	return mTeamCounter;
+uint16_t get_timer(void){
+    return mTeamCounter;
+}
+
+void MyTaskTimer_StartFromZero(void)
+{
+    OSA_EventSet(mMyEvents, gMyNewTaskEvent4_c);
+}
+
+void MyTaskTimer_Resume(void)
+{
+    OSA_EventSet(mMyEvents, gMyNewTaskEvent5_c);
 }

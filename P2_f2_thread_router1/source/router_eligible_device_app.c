@@ -86,6 +86,10 @@ Private macros
 
 #define APP_TEAM_URI_PATH   "/team2"
 
+#define APP_STOP_TMR_URI_PATH      "/stopTmr"
+#define APP_START_TMR_URI_PATH     "/startTmr"
+#define APP_RESTART_TMR_URI_PATH   "/restartTmr"
+
 #if LARGE_NETWORK
 #define APP_RESET_TO_FACTORY_URI_PATH           "/reset"
 #endif
@@ -143,7 +147,24 @@ static void APP_CoapTeamCb(coapSessionStatus_t sessionStatus,
                            uint8_t *pData,
                            coapSession_t *pSession,
                            uint32_t dataLen);
-
+static void APP_CoapStopTmrCb(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+);
+static void APP_CoapStartTmrCb(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+);
+static void APP_CoapRestartTmrCb(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+);
 /*==================================================================================================
 Public global variables declarations
 ==================================================================================================*/
@@ -155,6 +176,24 @@ const coapUriPath_t gAPP_TEAM_URI_PATH =
 {
     SizeOfString(APP_TEAM_URI_PATH),
     (uint8_t *)APP_TEAM_URI_PATH
+};
+
+const coapUriPath_t gAPP_STOP_TMR_URI_PATH =
+{
+    SizeOfString(APP_STOP_TMR_URI_PATH),
+    (uint8_t *)APP_STOP_TMR_URI_PATH
+};
+
+const coapUriPath_t gAPP_START_TMR_URI_PATH =
+{
+    SizeOfString(APP_START_TMR_URI_PATH),
+    (uint8_t *)APP_START_TMR_URI_PATH
+};
+
+const coapUriPath_t gAPP_RESTART_TMR_URI_PATH =
+{
+    SizeOfString(APP_RESTART_TMR_URI_PATH),
+    (uint8_t *)APP_RESTART_TMR_URI_PATH
 };
 
 #if LARGE_NETWORK
@@ -499,15 +538,23 @@ static void APP_InitCoapDemo
     void
 )
 {
-    coapRegCbParams_t cbParams[] =  {{APP_CoapLedCb,  (coapUriPath_t *)&gAPP_LED_URI_PATH},
-                                     {APP_CoapTempCb, (coapUriPath_t *)&gAPP_TEMP_URI_PATH},
+	coapRegCbParams_t cbParams[] =
+	{
+	    {APP_CoapLedCb,  (coapUriPath_t *)&gAPP_LED_URI_PATH},
+	    {APP_CoapTempCb, (coapUriPath_t *)&gAPP_TEMP_URI_PATH},
+	    {APP_CoapTeamCb, (coapUriPath_t *)&gAPP_TEAM_URI_PATH},
 
-									 {APP_CoapTeamCb, (coapUriPath_t *)&gAPP_TEAM_URI_PATH},
-#if LARGE_NETWORK
-                                     {APP_CoapResetToFactoryDefaultsCb, (coapUriPath_t *)&gAPP_RESET_URI_PATH},
-#endif
-                                     {APP_CoapSinkCb, (coapUriPath_t *)&gAPP_SINK_URI_PATH}};
-    /* Register Services in COAP */
+	    {APP_CoapStopTmrCb, (coapUriPath_t *)&gAPP_STOP_TMR_URI_PATH},
+	    {APP_CoapStartTmrCb, (coapUriPath_t *)&gAPP_START_TMR_URI_PATH},
+	    {APP_CoapRestartTmrCb, (coapUriPath_t *)&gAPP_RESTART_TMR_URI_PATH},
+
+	#if LARGE_NETWORK
+	    {APP_CoapResetToFactoryDefaultsCb, (coapUriPath_t *)&gAPP_RESET_URI_PATH},
+	#endif
+
+	    {APP_CoapSinkCb, (coapUriPath_t *)&gAPP_SINK_URI_PATH}
+	};
+	/* Register Services in COAP */
     sockaddrStorage_t coapParams = {0};
 
     NWKU_SetSockAddrInfo(&coapParams, NULL, AF_INET6, COAP_DEFAULT_PORT, 0, gIpIfSlp0_c);
@@ -1540,6 +1587,104 @@ static void APP_CoapTeamCb
             );
         }
 
+    }
+}
+
+static void APP_CoapStopTmrCb
+(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+)
+{
+    (void)pData;
+    (void)dataLen;
+
+    if(sessionStatus == gCoapFailure_c)
+    {
+        return;
+    }
+
+    MyTaskTimer_Stop();
+
+    shell_write("/stopTmr received\r\n");
+    shell_refresh();
+
+    if(pSession->msgType == gCoapConfirmable_c)
+    {
+        (void)COAP_Send(
+            pSession,
+            gCoapMsgTypeAckSuccessChanged_c,
+            NULL,
+            0
+        );
+    }
+}
+
+
+static void APP_CoapStartTmrCb
+(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+)
+{
+    (void)pData;
+    (void)dataLen;
+
+    if(sessionStatus == gCoapFailure_c)
+    {
+        return;
+    }
+
+    MyTaskTimer_StartFromZero();
+
+    shell_write("/startTmr received\r\n");
+    shell_refresh();
+
+    if(pSession->msgType == gCoapConfirmable_c)
+    {
+        (void)COAP_Send(
+            pSession,
+            gCoapMsgTypeAckSuccessChanged_c,
+            NULL,
+            0
+        );
+    }
+}
+
+
+static void APP_CoapRestartTmrCb
+(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+)
+{
+    (void)pData;
+    (void)dataLen;
+
+    if(sessionStatus == gCoapFailure_c)
+    {
+        return;
+    }
+
+    MyTaskTimer_Resume();
+
+    shell_write("/restartTmr received\r\n");
+    shell_refresh();
+
+    if(pSession->msgType == gCoapConfirmable_c)
+    {
+        (void)COAP_Send(
+            pSession,
+            gCoapMsgTypeAckSuccessChanged_c,
+            NULL,
+            0
+        );
     }
 }
 
