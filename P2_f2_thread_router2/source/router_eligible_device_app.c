@@ -2047,7 +2047,7 @@ static void APP_RequestTeamCounter(uint8_t *param)
                 APP_CoapTeamResponseCb
             );
 
-            shell_write("CON\r\n");
+ //           shell_write("CON\r\n");
             shell_refresh();
 
             (void)COAP_Send(
