@@ -93,6 +93,8 @@ Private macros
 #define APP_START_TMR_URI_PATH     "/startTmr"
 #define APP_RESTART_TMR_URI_PATH   "/restartTmr"
 
+#define APP_ACCEL_URI_PATH        "/accel"
+
 #if LARGE_NETWORK
 #define APP_RESET_TO_FACTORY_URI_PATH           "/reset"
 #endif
@@ -142,6 +144,12 @@ static void APP_SendLedFlash(uint8_t *pParam);
 static void APP_SendLedColorWheel(uint8_t *pParam);
 
 #endif
+
+static void APP_SetAccelLed(
+    int16_t x,
+    int16_t y,
+    int16_t z
+);
 
 
 static void APP_LocalDataSinkRelease(uint8_t *pParam);
@@ -211,6 +219,15 @@ static void APP_AutoStartCb(void *param);
 
 
 static void APP_RequestTeamCounter(uint8_t *param);
+
+static void APP_RequestAccel(uint8_t *param);
+
+static void APP_CoapAccelResponseCb(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+);
 
 
 static void APP_CoapTeamResponseCb(
@@ -290,6 +307,11 @@ const coapUriPath_t gAPP_TEAM_URI_PATH =
     SizeOfString(APP_TEAM_URI_PATH),
     (uint8_t *)APP_TEAM_URI_PATH
 };
+const coapUriPath_t gAPP_ACCEL_URI_PATH =
+{
+    SizeOfString(APP_ACCEL_URI_PATH),
+    (uint8_t *)APP_ACCEL_URI_PATH
+};
 const coapUriPath_t gAPP_STOP_MY_TMR_URI_PATH =
 {
     SizeOfString(APP_STOP_MY_TMR_URI_PATH),
@@ -340,6 +362,8 @@ static ipAddr_t mLeaderAddress;
 
 /* Leader IPv6 address status */
 static bool_t mLeaderAddressValid = FALSE;
+
+static bool_t mAccelLastRequestWasCon = TRUE;
 
 #if APP_AUTOSTART
 tmrTimerID_t tmrStartApp = gTmrInvalidTimerID_c;
@@ -997,7 +1021,7 @@ void APP_TriggerCounterRequest(void)
     if(mLeaderAddressValid == TRUE)
     {
         (void)NWKU_SendMsg(
-            APP_RequestTeamCounter,
+            APP_RequestAccel,
             NULL,
             mpAppThreadMsgQueue
         );
@@ -1011,6 +1035,41 @@ Private functions
 \fn     static void APP_InitCoapDemo(void)
 \brief  Initialize CoAP demo.
 ***************************************************************************************************/
+static void APP_SetAccelLed
+(
+    int16_t x,
+    int16_t y,
+    int16_t z
+)
+{
+    if((x >= y) && (x >= z))
+    {
+        LED_SetRgbLed(
+            LED_RGB,
+            0,
+            LED_MAX_RGB_VALUE_c,
+            0
+        );
+    }
+    else if((y >= x) && (y >= z))
+    {
+        LED_SetRgbLed(
+            LED_RGB,
+            LED_MAX_RGB_VALUE_c,
+            0,
+            LED_MAX_RGB_VALUE_c
+        );
+    }
+    else
+    {
+        LED_SetRgbLed(
+            LED_RGB,
+            0,
+            LED_MAX_RGB_VALUE_c,
+            LED_MAX_RGB_VALUE_c
+        );
+    }
+}
 static void APP_InitCoapDemo
 (
     void
@@ -2076,6 +2135,71 @@ static void APP_RequestTeamCounter(uint8_t *param)
     }
 }
 
+static void APP_RequestAccel(uint8_t *param)
+{
+    coapSession_t *pSession = NULL;
+    static bool_t sendCon = TRUE;
+
+    (void)param;
+
+    if(mLeaderAddressValid == FALSE)
+    {
+        return;
+    }
+
+    pSession = COAP_OpenSession(mAppCoapInstId);
+
+    if(pSession != NULL)
+    {
+        FLib_MemCpy(
+            &pSession->remoteAddrStorage.ss_addr,
+            &mLeaderAddress,
+            sizeof(ipAddr_t)
+        );
+
+        pSession->pUriPath =
+            (coapUriPath_t *)&gAPP_ACCEL_URI_PATH;
+
+        COAP_SetCallback(
+            pSession,
+            APP_CoapAccelResponseCb
+        );
+
+        if(sendCon == TRUE)
+        {
+            mAccelLastRequestWasCon = TRUE;
+
+            shell_write("Sending CON GET /accel\r\n");
+            shell_refresh();
+
+            (void)COAP_Send(
+                pSession,
+                gCoapMsgTypeConGet_c,
+                NULL,
+                0
+            );
+
+            sendCon = FALSE;
+        }
+        else
+        {
+            mAccelLastRequestWasCon = FALSE;
+
+            shell_write("Sending NON GET /accel\r\n");
+            shell_refresh();
+
+            (void)COAP_Send(
+                pSession,
+                gCoapMsgTypeNonGet_c,
+                NULL,
+                0
+            );
+
+            sendCon = TRUE;
+        }
+    }
+}
+
 static void APP_CoapTeamResponseCb
 (
     coapSessionStatus_t sessionStatus,
@@ -2138,6 +2262,90 @@ static void APP_CoapTeamResponseCb
 
 \param  [in]    param    Not used
 ***************************************************************************************************/
+
+static void APP_CoapAccelResponseCb
+(
+    coapSessionStatus_t sessionStatus,
+    uint8_t *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+)
+{
+	int x;
+	int y;
+	int z;
+
+    char addrStr[INET6_ADDRSTRLEN];
+    char accelStr[48];
+    uint32_t copyLength;
+
+    if((sessionStatus == gCoapSuccess_c) &&
+       (pData != NULL) &&
+       (dataLen > 0))
+    {
+        ntop(
+            AF_INET6,
+            (ipAddr_t *)&pSession->remoteAddrStorage.ss_addr,
+            addrStr,
+            INET6_ADDRSTRLEN
+        );
+
+        copyLength = dataLen;
+
+        if(copyLength >= sizeof(accelStr))
+        {
+            copyLength = sizeof(accelStr) - 1;
+        }
+
+        FLib_MemCpy(
+            accelStr,
+            pData,
+            copyLength
+        );
+
+        accelStr[copyLength] = '\0';
+
+        if(sscanf(
+               accelStr,
+               "X=%d Y=%d Z=%d",
+               &x,
+               &y,
+               &z
+           ) == 3)
+        {
+            APP_SetAccelLed(
+                (int16_t)x,
+                (int16_t)y,
+                (int16_t)z
+            );
+        }
+
+        if(mAccelLastRequestWasCon == TRUE)
+        {
+            shell_printf(
+                "Accel = %s from %s type CON\r\n",
+                accelStr,
+                addrStr
+            );
+        }
+        else
+        {
+            shell_printf(
+                "Accel = %s from %s type NON\r\n",
+                accelStr,
+                addrStr
+            );
+        }
+
+        shell_refresh();
+    }
+    else if(sessionStatus == gCoapFailure_c)
+    {
+        shell_write("No accelerometer response received from Leader\r\n");
+        shell_refresh();
+    }
+}
+
 static void App_RestoreLeaderLed
 (
     uint8_t *param
